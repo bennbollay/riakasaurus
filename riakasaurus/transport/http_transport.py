@@ -5,7 +5,7 @@ LineReceiver.MAX_LENGTH = 1024 * 1024 * 64
 
 from twisted.internet import defer, reactor, protocol, error
 from twisted.web.http_headers import Headers
-from twisted.web.client import Agent
+from twisted.web.client import Agent, HTTPConnectionPool
 from twisted.web.iweb import IBodyProducer
 from twisted.python import log
 
@@ -121,15 +121,19 @@ class HTTPTransport(transport.FeatureDetection):
     implements(transport.ITransport)
 
     """ HTTP Transport for Riak """
-    def __init__(self, client, prefix=None):
+    def __init__(self, client, prefix=None, maxPersistentPerHost=None):
         if prefix:
             self._prefix = prefix
         else:
             self._prefix = client._prefix
+        self._connectionPool = HTTPConnectionPool()
+        if maxPersistentPerHost:
+            self._connectionPool.maxPersistentPerHost = maxPersistentPerHost
         self.host = client._host
         self.port = client._port
         self.client = client
         self._client_id = None
+        self._agent = Agent(reactor, pool=self._connectionPool)
 
     def http_response(self, response):
         def haveBody(body):
@@ -171,7 +175,7 @@ class HTTPTransport(transport.FeatureDetection):
         else:
             bodyProducer = None
 
-        requestAgent = Agent(reactor).request(
+        requestAgent = self._agent.request(
                 method, str(url), Headers(h), bodyProducer)
 
         if self.client.request_timeout:
